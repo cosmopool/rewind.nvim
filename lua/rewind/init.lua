@@ -1,10 +1,10 @@
 local M = {}
 
 M._size = 1000
-M._idx_read = 0
-M._idx_write = 0
+M._idx_current = 0
+M._idx_oldest = 0
+M._idx_latest = 0
 M.timeline = {}
-M.position = 1
 
 function M.inspect()
   for key, value in pairs(M.timeline) do
@@ -12,9 +12,8 @@ function M.inspect()
   end
 
   print("TAIL:", M.tail)
-  print("POSITION:", M.position)
   print("ITEMS:", M.timeline)
-  local buffer = M.timeline[M.position - 1]
+  local buffer = M.timeline[M._idx_oldest]
   print("BUFFER:", buffer)
   print("BUFFER:", buffer.id, buffer.row, buffer.col)
 end
@@ -36,8 +35,9 @@ function M.setup(opts)
 
       local cursor = vim.api.nvim_win_get_cursor(win)
       local buff_number = vim.api.nvim_get_current_buf()
+      local file_name = vim.api.nvim_buf_get_name(buff_number)
+      print(file_name)
       M.push(cursor[1], cursor[2], buff_number)
-      M.position = M.position + 1
     end
   })
 end
@@ -47,27 +47,34 @@ end
 ---@param col number
 ---@param buff_number number
 function M.push(row, col, buff_number)
-  M.timeline[M._idx_write] = { row = row, col = col, number = buff_number }
-  M._idx_write = (M._idx_write + 1) % M._size
-  if M._idx_write == M._idx_read then
-    M._idx_read = (M._idx_read + 1) % M._size
+  local entry = { row = row, col = col, number = buff_number }
+  M.timeline[M._idx_latest + 1 % M.size] = entry
+
+  M._idx_latest = (M._idx_latest + 1) % M._size
+  if M._idx_latest == M._idx_oldest then
+    M._idx_oldest = (M._idx_oldest + 1) % M._size
   end
 end
 
 function M.rewind()
-  if M.position <= 1 then return end
+  print("idx write", M._idx_latest)
+  print("idx read", M._idx_current)
+  if M._idx_current == M._idx_latest then return end
 
-  M.position = M.position - 2
-  local buffer = M.timeline[M.position]
+  M._idx_latest = (M._idx_latest - 1) % M._size
+  if M._idx_latest == M._idx_current then
+    M._idx_current = (M._idx_current - 1) % M._size
+  end
+
+  local buffer = M.timeline[M._idx_current]
   vim.api.nvim_set_current_buf(buffer.number)
   vim.api.nvim_win_set_cursor(0, { buffer.row, buffer.col })
 end
 
 function M.forward()
-  print("idx write", M.idx_write)
-  print("idx read", M.idx_read)
-  print("position", M.position)
-  if M.position >= M._idx_write then return end
+  print("idx write", M._idx_latest)
+  print("idx read", M._idx_oldest)
+  if M.position >= M._idx_latest then return end
 
   M.position = M.position + 1
   local buffer = M.timeline.pop()
